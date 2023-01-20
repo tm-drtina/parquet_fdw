@@ -986,11 +986,11 @@ public:
 
                 if (array->IsNull(chunkInfo.pos))
                 {
-                    slot->tts_isnull[attr] = true;
+                    SLOT_ISNULL(slot)[attr] = true;
                     chunkInfo.pos++;
                     continue;
                 }
-                slot->tts_isnull[attr] = false;
+                SLOT_ISNULL(slot)[attr] = false;
 
                 /* Currently only primitive types and lists are supported */
                 switch (typinfo.arrow.type_id)
@@ -999,7 +999,7 @@ public:
                     {
                         arrow::ListArray   *larray = (arrow::ListArray *) array;
 
-                        slot->tts_values[attr] =
+                        SLOT_VALUES(slot)[attr] =
                             this->nested_list_to_datum(larray, chunkInfo.pos,
                                                        typinfo);
                         break;
@@ -1008,12 +1008,12 @@ public:
                     {
                         arrow::MapArray* maparray = (arrow::MapArray*) array;
 
-                        slot->tts_values[attr] =
+                        SLOT_VALUES(slot)[attr] =
                             this->map_to_datum(maparray, chunkInfo.pos, typinfo);
                         break;
                     }
                     default:
-                        slot->tts_values[attr] = 
+                        SLOT_VALUES(slot)[attr] =
                             this->read_primitive_type(array, typinfo, chunkInfo.pos);
                 }
 
@@ -1021,7 +1021,7 @@ public:
             }
             else
             {
-                slot->tts_isnull[attr] = true;
+                SLOT_ISNULL(slot)[attr] = true;
             }
         }
     }
@@ -1334,19 +1334,19 @@ public:
                 switch(typinfo.arrow.type_id)
                 {
                     case arrow::Type::BOOL:
-                        slot->tts_values[attr] = BoolGetDatum(((bool *) data)[this->row]);
+                        SLOT_VALUES(slot)[attr] = BoolGetDatum(((bool *) data)[this->row]);
                         break;
                     case arrow::Type::INT8:
-                        slot->tts_values[attr] = Int8GetDatum(((int8 *) data)[this->row]);
+                        SLOT_VALUES(slot)[attr] = Int8GetDatum(((int8 *) data)[this->row]);
                         break;
                     case arrow::Type::INT16:
-                        slot->tts_values[attr] = Int16GetDatum(((int16 *) data)[this->row]);
+                        SLOT_VALUES(slot)[attr] = Int16GetDatum(((int16 *) data)[this->row]);
                         break;
                     case arrow::Type::INT32:
-                        slot->tts_values[attr] = Int32GetDatum(((int32 *) data)[this->row]);
+                        SLOT_VALUES(slot)[attr] = Int32GetDatum(((int32 *) data)[this->row]);
                         break;
                     case arrow::Type::FLOAT:
-                        slot->tts_values[attr] = Float4GetDatum(((float *) data)[this->row]);
+                        SLOT_VALUES(slot)[attr] = Float4GetDatum(((float *) data)[this->row]);
                         break;
                     case arrow::Type::DATE32:
                         {
@@ -1357,21 +1357,22 @@ public:
                              */
                             int dt = ((int *) data)[this->row]
                                 + (UNIX_EPOCH_JDATE - POSTGRES_EPOCH_JDATE);
-                            slot->tts_values[attr] = DateADTGetDatum(dt);
+                            SLOT_VALUES(slot)[attr] = DateADTGetDatum(dt);
                         }
                         break;
                     default:
-                        slot->tts_values[attr] = ((Datum *) data)[this->row];
+                        SLOT_VALUES(slot)[attr] = ((Datum *) data)[this->row];
                         need_cast = false;
                 }
 
                 if (need_cast)
-                    slot->tts_values[attr] = do_cast(slot->tts_values[attr], typinfo);
-                slot->tts_isnull[attr] = this->column_nulls[arrow_col][this->row];
+                    SLOT_VALUES(slot)[attr] = do_cast(SLOT_VALUES(slot)[attr], typinfo);
+
+                SLOT_ISNULL(slot)[attr] = this->column_nulls[arrow_col][this->row];
             }
             else
             {
-                slot->tts_isnull[attr] = true;
+                SLOT_ISNULL(slot)[attr] = true;
             }
         }
 

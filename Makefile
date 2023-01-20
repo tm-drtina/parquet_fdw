@@ -29,6 +29,13 @@ endif
 
 include $(PGXS)
 
+# Taken from postgres configure
+VERSION_NUM ?= $(shell echo "$(PG_VERSION)" | sed 's/[A-Za-z].*$$//' | tr '.' '	' | awk '{printf "%d%02d%02d", $41, $$2, (NF >= 3) ? $$3 : 0}')
+
+ifdef GREENPLUM
+	override CXXFLAGS += -DGREENPLUM
+endif
+
 # XXX: PostgreSQL below 11 does not automatically add -fPIC or equivalent to C++
 # flags when building a shared library, have to do it here explicitely.
 ifeq ($(shell test $(VERSION_NUM) -lt 110000; echo $$?), 0)
@@ -42,6 +49,7 @@ endif
 # is used. PostgreSQL headers still uses the keyword, particularly:
 # src/include/storage/s_lock.h.
 COMPILE.cxx.bc = $(CLANG) -xc++ -Wno-ignored-attributes -Wno-register $(BITCODE_CXXFLAGS) $(CPPFLAGS) -emit-llvm -c
+override CXXFLAGS += -Wno-register
 
 # XXX: a hurdle to use common compiler flags when building bytecode from C++
 # files. should be not unnecessary, but src/Makefile.global omits passing those

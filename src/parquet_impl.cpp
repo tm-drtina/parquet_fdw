@@ -31,7 +31,6 @@ extern "C"
 #include "postgres.h"
 
 #include "access/htup_details.h"
-#include "access/parallel.h"
 #include "access/sysattr.h"
 #include "access/nbtree.h"
 #include "access/reloptions.h"
@@ -61,7 +60,6 @@ extern "C"
 #include "utils/lsyscache.h"
 #include "utils/memutils.h"
 #include "utils/memdebug.h"
-#include "utils/regproc.h"
 #include "utils/rel.h"
 #include "utils/timestamp.h"
 #include "utils/typcache.h"
@@ -79,6 +77,11 @@ extern "C"
 #include "catalog/pg_am.h"
 #else
 #include "catalog/pg_am_d.h"
+#endif
+
+#if PG_VERSION_NUM >= 100000
+#include "access/parallel.h"
+#include "utils/regproc.h"
 #endif
 }
 
@@ -331,8 +334,13 @@ convert_const(Const *c, Oid dst_oid)
                 getTypeOutputInfo(c->consttype, &output_fn, &isvarlena);
                 getTypeInputInfo(dst_oid, &input_fn, &input_param);
 
+                // Was this a bug?
+#if PG_VERSION_NUM < 100000
+                str = OidOutputFunctionCall(output_fn, c->constvalue);
+#else
                 str = DatumGetCString(OidOutputFunctionCall(output_fn,
                                                             c->constvalue));
+#endif
                 newc->constvalue = OidInputFunctionCall(input_fn, str,
                                                         input_param, 0);
 
@@ -874,6 +882,7 @@ create_foreign_table_query(const char *tablename,
     return str.data;
 }
 
+#if PG_VERSION_NUM >= 100000
 static void
 destroy_parquet_state(void *arg)
 {
@@ -882,6 +891,7 @@ destroy_parquet_state(void *arg)
     if (festate)
         delete festate;
 }
+#endif
 
 /*
  * C interface functions
@@ -1119,7 +1129,12 @@ estimate_costs(PlannerInfo *root, RelOptInfo *baserel, Cost *startup_cost,
                                baserel->baserestrictinfo,
                                0,
                                JOIN_INNER,
-                               NULL);
+                               NULL
+#ifdef GREENPLUM
+                               ,
+                               /* use_damping = */ false
+#endif
+                               );
 
     /*
      * Here we assume that parquet tuple cost is the same as regular tuple cost
@@ -1141,9 +1156,15 @@ extract_used_attributes(RelOptInfo *baserel)
     ParquetFdwPlanState *fdw_private = (ParquetFdwPlanState *) baserel->fdw_private;
     ListCell *lc;
 
+#if PG_VERSION_NUM >= 96000
     pull_varattnos((Node *) baserel->reltarget->exprs,
                    baserel->relid,
                    &fdw_private->attrs_used);
+#else
+    pull_varattnos((Node *) baserel->reltargetlist,
+                   baserel->relid,
+                   &fdw_private->attrs_used);
+#endif
 
     foreach(lc, baserel->baserestrictinfo)
     {
@@ -1286,13 +1307,17 @@ parquetGetForeignPaths(PlannerInfo *root,
     }
 
     foreign_path = (Path *) create_foreignscan_path(root, baserel,
+#if PG_VERSION_NUM >= 100000
                                                     NULL,	/* default pathtarget */
+#endif
                                                     baserel->rows,
                                                     startup_cost,
                                                     total_cost,
                                                     NULL,   /* no pathkeys */
                                                     NULL,	/* no outer rel either */
+#if PG_VERSION_NUM >= 100000
                                                     NULL,	/* no extra plan */
+#endif
                                                     (List *) fdw_private);
     if (!enable_multifile && is_multi)
         foreign_path->total_cost += disable_cost;
@@ -1312,13 +1337,17 @@ parquetGetForeignPaths(PlannerInfo *root,
         memcpy(private_sort, fdw_private, sizeof(ParquetFdwPlanState));
 
         path = (Path *) create_foreignscan_path(root, baserel,
+#if PG_VERSION_NUM >= 100000
                                                 NULL,	/* default pathtarget */
+#endif
                                                 baserel->rows,
                                                 startup_cost,
                                                 total_cost,
                                                 pathkeys,
                                                 NULL,	/* no outer rel either */
+#if PG_VERSION_NUM >= 100000
                                                 NULL,	/* no extra plan */
+#endif
                                                 (List *) private_sort);
 
         /* For multifile case calculate the cost of merging files */
@@ -1337,6 +1366,7 @@ parquetGetForeignPaths(PlannerInfo *root,
     }
 
     /* Parallel paths */
+#if PG_VERSION_NUM >= 100000
     if (baserel->consider_parallel > 0)
     {
         ParquetFdwPlanState *private_parallel;
@@ -1412,6 +1442,7 @@ parquetGetForeignPaths(PlannerInfo *root,
             add_partial_path(baserel, path);
         }
     }
+#endif
 }
 
 extern "C" ForeignScan *
@@ -1420,8 +1451,12 @@ parquetGetForeignPlan(PlannerInfo * /* root */,
                       Oid /* foreigntableid */,
                       ForeignPath *best_path,
                       List *tlist,
-                      List *scan_clauses,
-                      Plan *outer_plan)
+                      List *scan_clauses
+#if PG_VERSION_NUM >= 100000
+                      ,
+                      Plan *outer_plan,
+#endif
+                      )
 {
     ParquetFdwPlanState *fdw_private = (ParquetFdwPlanState *) best_path->fdw_private;
     Index		scan_relid = baserel->relid;
@@ -1468,17 +1503,23 @@ parquetGetForeignPlan(PlannerInfo * /* root */,
 							scan_clauses,
 							scan_relid,
 							NIL,	/* no expressions to evaluate */
-							params,
+							params
+#if PG_VERSION_NUM >= 100000
+                            ,
 							NIL,	/* no custom tlist */
 							NIL,	/* no remote quals */
-							outer_plan);
+							outer_plan,
+#endif
+                            );
 }
 
 extern "C" void
 parquetBeginForeignScan(ForeignScanState *node, int /* eflags */)
 {
     ParquetFdwExecutionState   *festate;
+#if PG_VERSION_NUM >= 100000
     MemoryContextCallback      *callback;
+#endif
     MemoryContext   reader_cxt;
 	ForeignScan    *plan = (ForeignScan *) node->ss.ps.plan;
 	EState         *estate = node->ss.ps.state;
@@ -1558,7 +1599,9 @@ parquetBeginForeignScan(ForeignScanState *node, int /* eflags */)
         sort_key.ssup_collation = collid;
         sort_key.ssup_nulls_first = true;
         sort_key.ssup_attno = attr;
+#if PG_VERSION_NUM >= 95000
         sort_key.abbreviate = false;
+#endif
 
         get_sort_group_operators(typid,
                                  true, false, false,
@@ -1602,10 +1645,12 @@ parquetBeginForeignScan(ForeignScanState *node, int /* eflags */)
      * Enable automatic execution state destruction by using memory context
      * callback
      */
+#if PG_VERSION_NUM >= 100000
     callback = (MemoryContextCallback *) palloc(sizeof(MemoryContextCallback));
     callback->func = destroy_parquet_state;
     callback->arg = (void *) festate;
     MemoryContextRegisterResetCallback(reader_cxt, callback);
+#endif
 
     node->fdw_state = festate;
 }
@@ -1768,8 +1813,8 @@ parquetAcquireSampleRowsFunc(Relation relation, int /* elevel */,
             if (!fake)
             {
                 rows[cnt++] = heap_form_tuple(tupleDesc,
-                                              slot->tts_values,
-                                              slot->tts_isnull);
+                                              SLOT_VALUES(slot),
+                                              SLOT_ISNULL(slot));
             }
 
             row++;
@@ -1883,6 +1928,7 @@ parquetExplainForeignScan(ForeignScanState *node, ExplainState *es)
 }
 
 /* Parallel query execution */
+#if PG_VERSION_NUM >= 100000
 
 extern "C" bool
 parquetIsForeignScanParallelSafe(PlannerInfo * /* root */,
@@ -2032,6 +2078,7 @@ parquetImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid /* serverOid */)
 
     return cmds;
 }
+#endif
 
 extern "C" Datum
 parquet_fdw_validator_impl(PG_FUNCTION_ARGS)
@@ -2151,8 +2198,14 @@ jsonb_to_options_list(Jsonb *options)
     if (!options)
         return NIL;
 
+#if PG_VERSION_NUM >= 100000
     if (!JsonContainerIsObject(&options->root))
         elog(ERROR, "options must be represented by a jsonb object");
+#else
+    // TODO probably wrong, check it later
+    if (!JB_ROOT_IS_OBJECT(&options->root))
+        elog(ERROR, "options must be represented by a jsonb object");
+#endif
 
     it = JsonbIteratorInit(&options->root);
     while ((type = JsonbIteratorNext(&it, &v, false)) != WJB_DONE)
@@ -2178,7 +2231,12 @@ jsonb_to_options_list(Jsonb *options)
                         elog(ERROR, "expected a string value");
                     val = pnstrdup(v.val.string.val, v.val.string.len);
 
+#if PG_VERSION_NUM >= 100000
                     elem = makeDefElem(key, (Node *) makeString(val), 0);
+#else
+
+                    elem = makeDefElem(key, (Node *) makeString(val));
+#endif
                     res = lappend(res, elem);
 
                     break;

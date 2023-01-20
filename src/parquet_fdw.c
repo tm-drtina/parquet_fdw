@@ -28,8 +28,11 @@ extern ForeignScan *parquetGetForeignPlan(PlannerInfo *root,
                       Oid foreigntableid,
                       ForeignPath *best_path,
                       List *tlist,
-                      List *scan_clauses,
-                      Plan *outer_plan);
+                      List *scan_clauses
+#if PG_VERSION_NUM >= 100000
+                      , Plan *outer_plan
+#endif
+                      );
 extern TupleTableSlot *parquetIterateForeignScan(ForeignScanState *node);
 extern void parquetBeginForeignScan(ForeignScanState *node, int eflags);
 extern void parquetEndForeignScan(ForeignScanState *node);
@@ -42,6 +45,7 @@ extern bool parquetAnalyzeForeignTable (Relation relation,
                             AcquireSampleRowsFunc *func,
                             BlockNumber *totalpages);
 extern void parquetExplainForeignScan(ForeignScanState *node, ExplainState *es);
+#if PG_VERSION_NUM >= 100000
 extern bool parquetIsForeignScanParallelSafe(PlannerInfo *root, RelOptInfo *rel,
                                              RangeTblEntry *rte);
 extern Size parquetEstimateDSMForeignScan(ForeignScanState *node,
@@ -57,6 +61,7 @@ extern void parquetInitializeWorkerForeignScan(ForeignScanState *node,
                                                void *coordinate);
 extern void parquetShutdownForeignScan(ForeignScanState *node);
 extern List *parquetImportForeignSchema(ImportForeignSchemaStmt *stmt, Oid serverOid);
+#endif
 extern Datum parquet_fdw_validator_impl(PG_FUNCTION_ARGS);
 
 /* GUC variable */
@@ -114,6 +119,7 @@ parquet_fdw_handler(PG_FUNCTION_ARGS)
 {
     FdwRoutine *fdwroutine = makeNode(FdwRoutine);
 
+    // Required
     fdwroutine->GetForeignRelSize = parquetGetForeignRelSize;
     fdwroutine->GetForeignPaths = parquetGetForeignPaths;
     fdwroutine->GetForeignPlan = parquetGetForeignPlan;
@@ -121,8 +127,10 @@ parquet_fdw_handler(PG_FUNCTION_ARGS)
     fdwroutine->IterateForeignScan = parquetIterateForeignScan;
     fdwroutine->ReScanForeignScan = parquetReScanForeignScan;
     fdwroutine->EndForeignScan = parquetEndForeignScan;
+    // Optional
     fdwroutine->AnalyzeForeignTable = parquetAnalyzeForeignTable;
     fdwroutine->ExplainForeignScan = parquetExplainForeignScan;
+#if PG_VERSION_NUM >= 100000
     fdwroutine->IsForeignScanParallelSafe = parquetIsForeignScanParallelSafe;
     fdwroutine->EstimateDSMForeignScan = parquetEstimateDSMForeignScan;
     fdwroutine->InitializeDSMForeignScan = parquetInitializeDSMForeignScan;
@@ -130,6 +138,7 @@ parquet_fdw_handler(PG_FUNCTION_ARGS)
     fdwroutine->InitializeWorkerForeignScan = parquetInitializeWorkerForeignScan;
     fdwroutine->ShutdownForeignScan = parquetShutdownForeignScan;
     fdwroutine->ImportForeignSchema = parquetImportForeignSchema;
+#endif
 
     PG_RETURN_POINTER(fdwroutine);
 }

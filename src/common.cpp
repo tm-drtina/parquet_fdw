@@ -34,7 +34,11 @@ exc_palloc(std::size_t size)
 
 	context->isReset = false;
 
+#ifdef GREENPLUM
+	ret = context->methods.alloc(context, size);
+#else
 	ret = context->methods->alloc(context, size);
+#endif
 	if (unlikely(ret == NULL))
 		throw std::bad_alloc();
 

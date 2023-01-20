@@ -19,6 +19,27 @@ extern "C"
 #define JsonbPGetDatum JsonbGetDatum
 #endif
 
+#if PG_VERSION_NUM < 100000
+#define jbvNull JsonbValue::jbvNull
+/* Scalar types */
+#define jbvString JsonbValue::jbvString
+#define jbvNumeric JsonbValue::jbvNumeric
+#define jbvBool JsonbValue::jbvBool
+/* Composite types */
+#define jbvArray JsonbValue::jbvArray
+#define jbvObject JsonbValue::jbvObject
+/* Binary (i.e. struct Jsonb) jbvArray/jbvObject */
+#define jbvBinary JsonbValue::jbvBinary
+#endif
+
+#if PG_VERSION_NUM < 100000
+#define SLOT_VALUES(slot) slot_get_values(slot)
+#define SLOT_ISNULL(slot) slot_get_isnull(slot)
+#else
+#define SLOT_VALUES(slot) slot->tts_values
+#define SLOT_ISNULL(slot) slot->tts_isnull
+#endif
+
 #define to_postgres_timestamp(tstype, i, ts)                    \
     switch ((tstype)->unit()) {                                 \
         case arrow::TimeUnit::SECOND:                           \

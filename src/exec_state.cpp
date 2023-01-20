@@ -425,7 +425,7 @@ public:
     {
 #if PG_VERSION_NUM < 110000
         /* Destroy tuple slots if any */
-        for (int i = 0; i < slots.size(); i++)
+        for (size_t i = 0; i < slots.size(); i++)
             ExecDropSingleTupleTableSlot(slots[i].slot);
 #endif
 
@@ -634,7 +634,7 @@ public:
     {
 #if PG_VERSION_NUM < 110000
         /* Destroy tuple slots if any */
-        for (int i = 0; i < slots.size(); i++)
+        for (size_t i = 0; i < slots.size(); i++)
             ExecDropSingleTupleTableSlot(slots[i].slot);
 #endif
 
